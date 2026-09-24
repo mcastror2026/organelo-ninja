@@ -180,6 +180,7 @@ function loseLife(missX) {
 
 function startGame() {
   state = 'playing'; score = 0; lives = MAXL; gt = 0; spawnT = .8; queue = []; objs = []; fact = null;
+  ammo = MAX_AMMO; reloadT = 0;
 }
 function gameOver() {
   state = 'over'; overAt = performance.now();
@@ -291,10 +292,16 @@ function drawSword(s) {
 }
 
 cv.addEventListener('pointermove', e => {
+  if (mode === 'revolver') { updateGun('m', e.clientX, e.clientY, undefined, performance.now()); return; }
   if (e.pointerType === 'mouse' || e.buttons) feed('m', e.clientX, e.clientY, performance.now(), 1, 1.2);
 });
 cv.addEventListener('pointerdown', e => {
   ac();
+  if (mode === 'revolver') {
+    updateGun('m', e.clientX, e.clientY, undefined, performance.now());
+    const g = guns.get('m'); g.x = e.clientX; g.y = e.clientY;
+    fire(e.clientX, e.clientY, g, performance.now()); return;
+  }
   const btn = getButton(performance.now());
   if (btn && Math.hypot(e.clientX - btn.x, e.clientY - btn.y) < btn.r) {
     addHalves('mitocondria', btn.x, btn.y, 0, 0, btn.r, 0, 0.3);
@@ -302,6 +309,75 @@ cv.addEventListener('pointerdown', e => {
   }
 });
 addEventListener('keydown', ac);
+addEventListener('keydown', e => {
+  if ((e.key === 'm' || e.key === 'M') && state !== 'playing') {
+    mode = mode === 'revolver' ? 'espada' : 'revolver';
+    guns.clear(); swords.clear(); blades.clear();
+  }
+});
+
+/* ================= Revólver (mano en forma de pistola) ================= */
+let mode = 'revolver'; // 'revolver' | 'espada'
+const guns = new Map(), shots = [];
+const MAX_AMMO = 6, TRIG_UP = .5, TRIG_DOWN = .3; // gatillo: pulgar arriba > .5, abajo < .3 (relativo al tamaño de la mano)
+let ammo = MAX_AMMO, reloadT = 0;
+function updateGun(id, ax, ay, ratio, now) {
+  let g = guns.get(id);
+  if (!g) { g = { x: ax, y: ay, hist: [], cocked: false, ratio }; guns.set(id, g); }
+  else { g.x += (ax - g.x) * .45; g.y += (ay - g.y) * .45; }
+  g.last = now; g.ratio = ratio;
+  g.hist.push({ x: g.x, y: g.y, t: now });
+  while (g.hist.length > 1 && now - g.hist[0].t > 300) g.hist.shift();
+  if (ratio === undefined) return;
+  if (ratio > TRIG_UP) g.cocked = true;
+  else if (ratio < TRIG_DOWN && g.cocked) {
+    g.cocked = false;
+    // al bajar el pulgar la mano se mueve un poco: se dispara donde apuntaba ~120 ms antes
+    const p = g.hist.find(h => now - h.t <= 120) || g;
+    fire(p.x, p.y, g, now);
+  }
+}
+function fire(x, y, owner, now) {
+  if (reloadT > 0) { sfx('empty'); return; }
+  shots.push({ x, y, life: .35 }); shake = Math.max(shake, 5); sfx('shot');
+  const btn = getButton(now);
+  if (btn && Math.hypot(x - btn.x, y - btn.y) < btn.r * 1.1) {
+    addHalves('mitocondria', btn.x, btn.y, 0, 0, btn.r, 0, Math.random() * TAU);
+    burst(btn.x, btn.y, '#ff8a3d', 30); startGame(); return;
+  }
+  if (--ammo <= 0) reloadT = 1.2;
+  for (const o of objs)
+    if (!o.dead && Math.hypot(x - o.x, y - o.y) < o.r + S() * .02) slice(o, Math.random() * TAU, owner, now);
+}
+function drawCrosshair(g) {
+  const r = S() * .035, col = reloadT > 0 ? '#9fb3c8' : g.cocked || g.ratio === undefined ? '#7ff6ff' : '#ffd23f';
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.shadowColor = col; ctx.shadowBlur = 10;
+  circ(g.x, g.y, r); ctx.stroke();
+  ctx.beginPath();
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(g.x + dx * r * .5, g.y + dy * r * .5); ctx.lineTo(g.x + dx * r * 1.5, g.y + dy * r * 1.5); }
+  ctx.stroke(); ctx.fillStyle = col; circ(g.x, g.y, 3); ctx.fill(); ctx.restore();
+}
+function drawShots() {
+  for (const s of shots) {
+    const k = 1 - s.life / .35;
+    ctx.globalAlpha = s.life / .35;
+    ctx.fillStyle = '#fff6c2'; circ(s.x, s.y, S() * (.012 + .02 * (1 - k))); ctx.fill();
+    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3; circ(s.x, s.y, S() * (.02 + .06 * k)); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+function drawAmmo() {
+  const u = S(), bw = u * .018, bh = u * .045, y = H - u * .06 - 40;
+  for (let i = 0; i < MAX_AMMO; i++) {
+    const x = W - 24 - (MAX_AMMO - i) * bw * 1.6;
+    const full = reloadT <= 0 && i < ammo;
+    ctx.fillStyle = full ? '#e0b43a' : 'rgba(255,255,255,.15)';
+    ctx.beginPath(); ctx.roundRect(x, y + bw * .6, bw, bh - bw * .6, 2); ctx.fill();
+    ctx.fillStyle = full ? '#c9c9c9' : 'rgba(255,255,255,.15)';
+    ctx.beginPath(); ctx.ellipse(x + bw / 2, y + bw * .7, bw / 2, bw * .8, 0, Math.PI, TAU); ctx.fill();
+  }
+  if (reloadT > 0) text('RECARGANDO…', W - 24 - MAX_AMMO * bw * .8, y - 16, u * .025, '#ffd23f', 500);
+}
 
 /* ================= Cámara + MediaPipe ================= */
 let landmarker = null, camReady = false, handsSeen = 0, lastVT = -1, camError = '';
@@ -338,6 +414,14 @@ function detect(now) {
   handsSeen = lastHands.length;
   lastHands.forEach((lm, i) => {
     const id = 'h' + (hd[i] && hd[i][0] ? hd[i][0].categoryName : i);
+    if (mode === 'revolver') {
+      // mira = punta del índice; gatillo = distancia del pulgar al costado del índice
+      const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y, lm[a].z - lm[b].z);
+      const ratio = Math.min(d(4, 5), d(4, 6)) / (d(0, 9) || 1);
+      const [x, y] = zoneMap(lm[8].x, lm[8].y);
+      updateGun(id, x * W, y * H, ratio, now);
+      return;
+    }
     // el mango pasa por el puño: centro entre nudillos y muñeca
     const kx = (lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 4, ky = (lm[5].y + lm[9].y + lm[13].y + lm[17].y) / 4;
     const [x, y] = zoneMap(kx * .75 + lm[0].x * .25, ky * .75 + lm[0].y * .25);
@@ -376,6 +460,18 @@ function drawCamPip() {
     ctx.fillStyle = '#ffd23f'; circ(...P(8), 4); ctx.fill();
   }
   ctx.restore();
+  // medidor del gatillo (pulgar): ayuda a ver si el gesto se reconoce
+  if (mode === 'revolver') {
+    const g = [...guns.values()].find(g => g.ratio !== undefined);
+    if (g) {
+      const bw = pw, bx = px, by = py - 16, k = Math.min(1, g.ratio / .8);
+      ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fillRect(bx, by, bw, 6);
+      ctx.fillStyle = g.cocked ? '#7ff6ff' : '#ffd23f'; ctx.fillRect(bx, by, bw * k, 6);
+      ctx.fillStyle = '#ff4d6d'; ctx.fillRect(bx + bw * TRIG_DOWN / .8 - 1, by - 2, 2, 10);
+      ctx.fillStyle = '#46c261'; ctx.fillRect(bx + bw * TRIG_UP / .8 - 1, by - 2, 2, 10);
+      text(g.cocked ? 'Pulgar arriba: listo' : 'Sube el pulgar para amartillar', bx + bw / 2, by - 12, 12, '#c9d6e3', 500);
+    }
+  }
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 12); ctx.stroke();
   text('C: ocultar cámara', px + pw / 2, py + ph + 14, 12, '#9fb3c8', 500);
@@ -390,7 +486,22 @@ function ac() {
 function sfx(k) {
   const a = AC; if (!a || a.state !== 'running') return;
   const t = a.currentTime;
-  if (k === 'slice') {
+  if (k === 'shot') {
+    const len = .3, buf = a.createBuffer(1, a.sampleRate * len, a.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 4);
+    const s = a.createBufferSource(); s.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1800;
+    const g = a.createGain(); g.gain.value = .9;
+    s.connect(f).connect(g).connect(a.destination); s.start(t);
+    const o = a.createOscillator(), og = a.createGain();
+    o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(40, t + .15);
+    og.gain.setValueAtTime(.5, t); og.gain.exponentialRampToValueAtTime(.001, t + .18);
+    o.connect(og).connect(a.destination); o.start(t); o.stop(t + .2);
+  } else if (k === 'empty') {
+    const o = a.createOscillator(), g = a.createGain(); o.type = 'square'; o.frequency.value = 1400;
+    g.gain.setValueAtTime(.08, t); g.gain.exponentialRampToValueAtTime(.001, t + .04);
+    o.connect(g).connect(a.destination); o.start(t); o.stop(t + .05);
+  } else if (k === 'slice') {
     const len = .18, buf = a.createBuffer(1, a.sampleRate * len, a.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
     const s = a.createBufferSource(); s.buffer = buf;
@@ -413,6 +524,10 @@ function update(dt, now) {
     while (b.pts.length && now - b.pts[0].t > 130) b.pts.shift();
     if (now - b.last > 400) blades.delete(id);
   }
+  for (const [id, g] of guns) if (id !== 'm' && now - g.last > 400) guns.delete(id);
+  for (const s of shots) s.life -= dt;
+  while (shots.length && shots[0].life <= 0) shots.shift();
+  if (reloadT > 0 && (reloadT -= dt) <= 0) ammo = MAX_AMMO;
   for (const [id, s] of swords) {
     while (s.hist.length > 1 && now - s.hist[0].t > 140) s.hist.shift();
     if (now - s.last > 400) swords.delete(id);
@@ -509,6 +624,7 @@ function render(now) {
   }
 
   for (const s of swords.values()) drawSword(s);
+  drawShots();
 
   for (const f of floats) {
     ctx.globalAlpha = Math.min(1, f.life * 2);
@@ -543,7 +659,10 @@ function render(now) {
   if (state === 'menu') {
     text('ORGANELO', W / 2, H * .17, u * .11, '#fff');
     text('NINJA', W / 2, H * .17 + u * .11, u * .11, '#7ff6ff');
-    text('Cierra el puño como si tomaras una espada y corta los organelos · ¡No cortes el núcleo!', W / 2, H * .17 + u * .2, u * .03, '#c9d6e3', 500);
+    text(mode === 'revolver'
+      ? 'Haz una pistola con la mano: apunta con el índice y baja el pulgar para disparar · ¡No le dispares al núcleo!'
+      : 'Cierra el puño como si tomaras una espada y corta los organelos · ¡No cortes el núcleo!', W / 2, H * .17 + u * .2, u * .03, '#c9d6e3', 500);
+    text(`Modo: ${mode === 'revolver' ? '🔫 Revólver' : '⚔️ Espada'}  ·  tecla M para cambiar`, W / 2, H * .17 + u * .25, u * .025, '#7ff6ff', 500);
     const legend = [...GOOD, 'nucleo'], gap = Math.min(W / 10, u * .16), y = H * .83;
     legend.forEach((k, i) => {
       const x = W / 2 + (i - 3) * gap;
@@ -560,12 +679,18 @@ function render(now) {
   const btn = getButton(now);
   if (btn) {
     ctx.save(); ctx.translate(btn.x, btn.y); ctx.rotate(Math.sin(now / 700) * .15); drawMito(btn.r); ctx.restore();
-    text(state === 'menu' ? 'CORTA PARA JUGAR' : 'CORTA PARA JUGAR DE NUEVO', btn.x, btn.y + btn.r * .9, u * .035, '#fff');
+    const verb = mode === 'revolver' ? 'DISPARA' : 'CORTA';
+    text(state === 'menu' ? `${verb} PARA JUGAR` : `${verb} PARA JUGAR DE NUEVO`, btn.x, btn.y + btn.r * .9, u * .035, '#fff');
+  }
+  if (mode === 'revolver') {
+    if (state === 'playing') drawAmmo();
+    for (const g of guns.values()) drawCrosshair(g);
   }
 
   if (camError) setMsg(camError);
   else if (!camReady) setMsg('Cargando cámara y detector de manos…');
-  else setMsg(handsSeen ? '⚔️ Espada en mano: puño cerrado, inclina la muñeca y corta rápido' : 'Muestra tu mano a la cámara');
+  else if (!handsSeen) setMsg('Muestra tu mano a la cámara');
+  else setMsg(mode === 'revolver' ? '🔫 Apunta con el índice y baja el pulgar para disparar' : '⚔️ Espada en mano: puño cerrado, inclina la muñeca y corta rápido');
 }
 
 let prev = performance.now();
