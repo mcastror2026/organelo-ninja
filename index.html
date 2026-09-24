@@ -122,8 +122,14 @@ function resize() {
   W = innerWidth; H = innerHeight;
   cv.width = W * dpr; cv.height = H * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  player.r = S() * .038; player.y = H - Math.max(S() * .09, 56);
+  layoutPlayer();
   if (!player.x) player.x = player.tx = W / 2;
+}
+// en pantallas táctiles el linfocito sube y deja abajo una zona para el dedo, así no lo tapa
+function touchZoneH() { return Math.max(H * .17, 110); }
+function layoutPlayer() {
+  player.r = S() * .038;
+  player.y = touchMode ? H - touchZoneH() - player.r * 1.6 : H - Math.max(S() * .09, 56);
 }
 addEventListener('resize', resize); resize();
 
@@ -170,7 +176,7 @@ function startGame() {
   state = 'playing'; score = 0; lives = MAXL; wave = 0; invul = 0; betweenT = 0;
   ufo = null; ufoT = 15; fact = null; waveMsg = null; touch.id = null;
   hint = { life: 4 };
-  nextWave(); buildBunkers();
+  layoutPlayer(); nextWave(); buildBunkers();
 }
 function gameOver() {
   state = 'over'; overAt = performance.now(); touch.id = null;
@@ -345,6 +351,19 @@ function drawRadical(q, t) {
   for (let i = 0; i < 4; i++) { const a = i * Math.PI / 4; ctx.moveTo(Math.cos(a) * 7, Math.sin(a) * 7); ctx.lineTo(-Math.cos(a) * 7, -Math.sin(a) * 7); }
   ctx.stroke(); ctx.fillStyle = '#ffd0d6'; circ(0, 0, 3); ctx.fill(); ctx.restore();
 }
+function drawTouchZone(t) {
+  const zh = touchZoneH(), y0 = H - zh, active = touch.id !== null;
+  ctx.fillStyle = active ? 'rgba(127,246,255,.08)' : 'rgba(127,246,255,.04)';
+  ctx.beginPath(); ctx.roundRect(10, y0 + 6, W - 20, zh - 16, 18); ctx.fill();
+  ctx.strokeStyle = 'rgba(127,246,255,.25)'; ctx.setLineDash([6, 6]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+  if (!active) {
+    const a = .45 + .25 * Math.sin(t * 3);
+    ctx.globalAlpha = a; text('◀   desliza aquí   ▶', W / 2, y0 + zh / 2, Math.min(S() * .045, 18), '#7ff6ff', 500); ctx.globalAlpha = 1;
+  }
+  // línea guía desde la zona hasta el linfocito
+  ctx.strokeStyle = 'rgba(127,246,255,.18)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(player.x, player.y + player.r * 1.1); ctx.lineTo(player.x, y0 + 6); ctx.stroke();
+}
 function drawLifeIcon(x, y, r) {
   ctx.fillStyle = '#e8f0ff'; ell(x, y, r * 1.35, r * .9); ctx.fill();
   ctx.fillStyle = '#6a4bc4'; ell(x, y + r * .1, r * .85, r * .6); ctx.fill();
@@ -374,6 +393,7 @@ function render(now) {
     ctx.restore();
     for (const q of eBullets) drawRadical(q, t);
     if (state === 'playing') drawPlayer();
+    if (state === 'playing' && touchMode) drawTouchZone(t);
   }
   for (const p of parts) { ctx.globalAlpha = Math.min(1, p.life * 2); ctx.fillStyle = p.col; circ(p.x, p.y, p.r); ctx.fill(); }
   ctx.globalAlpha = 1;
