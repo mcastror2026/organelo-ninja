@@ -235,10 +235,8 @@ addEventListener('keydown', ac);
 
 /* ================= Cámara + MediaPipe ================= */
 let landmarker = null, camReady = false, handsSeen = 0, lastVT = -1, camError = '';
-function camMap() {
-  const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(W / vw, H / vh);
-  return { s, vw, vh, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2 };
-}
+let lastHands = [], showPip = true;
+addEventListener('keydown', e => { if (e.key === 'c' || e.key === 'C') showPip = !showPip; });
 async function initHands() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: false });
@@ -265,13 +263,48 @@ function detect(now) {
   if (!camReady || video.readyState < 2 || video.currentTime === lastVT) return;
   lastVT = video.currentTime;
   const res = landmarker.detectForVideo(video, now);
-  const m = camMap(), hd = res.handedness || res.handednesses || [];
-  handsSeen = res.landmarks ? res.landmarks.length : 0;
-  (res.landmarks || []).forEach((lm, i) => {
+  const hd = res.handedness || res.handednesses || [];
+  lastHands = res.landmarks || [];
+  handsSeen = lastHands.length;
+  lastHands.forEach((lm, i) => {
     const tip = lm[8]; // punta del dedo índice
     const id = 'h' + (hd[i] && hd[i][0] ? hd[i][0].categoryName : i);
-    feed(id, W - (m.ox + tip.x * m.vw * m.s), m.oy + tip.y * m.vh * m.s, now, .6, .9);
+    const [x, y] = zoneMap(tip.x, tip.y);
+    feed(id, x * W, y * H, now, .6, .9);
   });
+}
+// Zona activa: solo el centro del cuadro de la cámara se estira a toda la pantalla,
+// así un movimiento corto de la mano recorre todo el juego (y se puede jugar más lejos).
+const ZONE = { x0: .18, x1: .82, y0: .12, y1: .78 };
+function zoneMap(nx, ny) {
+  const c = v => Math.max(0, Math.min(1, v));
+  return [c(((1 - nx) - ZONE.x0) / (ZONE.x1 - ZONE.x0)), c((ny - ZONE.y0) / (ZONE.y1 - ZONE.y0))];
+}
+// Ventanita de cámara (espejada) con el esqueleto de la mano y la zona activa
+const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function drawCamPip() {
+  if (!showPip || !video.videoWidth || video.readyState < 2) return;
+  const pw = Math.min(240, W * .22), ph = pw * video.videoHeight / video.videoWidth;
+  const px = 16, py = H - ph - 56;
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 12); ctx.clip();
+  ctx.translate(px + pw, py); ctx.scale(-1, 1);
+  ctx.globalAlpha = .75; ctx.drawImage(video, 0, 0, pw, ph); ctx.globalAlpha = 1;
+  ctx.restore();
+  ctx.save(); ctx.translate(px, py);
+  ctx.strokeStyle = 'rgba(127,246,255,.7)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5;
+  ctx.strokeRect(ZONE.x0 * pw, ZONE.y0 * ph, (ZONE.x1 - ZONE.x0) * pw, (ZONE.y1 - ZONE.y0) * ph);
+  ctx.setLineDash([]);
+  for (const lm of lastHands) {
+    const P = i => [(1 - lm[i].x) * pw, lm[i].y * ph];
+    ctx.strokeStyle = '#7ff6ff'; ctx.lineWidth = 2;
+    ctx.beginPath(); for (const [a, b] of BONES) { ctx.moveTo(...P(a)); ctx.lineTo(...P(b)); } ctx.stroke();
+    ctx.fillStyle = '#ffd23f'; circ(...P(8), 4); ctx.fill();
+  }
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 12); ctx.stroke();
+  text('C: ocultar cámara', px + pw / 2, py + ph + 14, 12, '#9fb3c8', 500);
 }
 initHands();
 
@@ -346,11 +379,6 @@ function setMsg(s) { if (s !== lastMsg) { lastMsg = s; msgEl.textContent = s; ms
 
 function drawBg() {
   ctx.fillStyle = '#0b0f1a'; ctx.fillRect(0, 0, W, H);
-  if (video.readyState >= 2 && video.videoWidth) {
-    const m = camMap();
-    ctx.save(); ctx.globalAlpha = .3; ctx.translate(W, 0); ctx.scale(-1, 1);
-    ctx.drawImage(video, m.ox, m.oy, m.vw * m.s, m.vh * m.s); ctx.restore();
-  }
   const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * .7);
   g.addColorStop(0, 'rgba(30,60,90,.35)'); g.addColorStop(1, 'rgba(5,8,18,.88)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
@@ -409,6 +437,7 @@ function render(now) {
   ctx.globalAlpha = 1;
   ctx.restore();
 
+  drawCamPip();
   if (flash) { ctx.fillStyle = `rgba(255,40,70,${flash * .35})`; ctx.fillRect(0, 0, W, H); }
 
   // HUD
@@ -435,7 +464,7 @@ function render(now) {
     text('ORGANELO', W / 2, H * .17, u * .11, '#fff');
     text('NINJA', W / 2, H * .17 + u * .11, u * .11, '#7ff6ff');
     text('Corta organelos moviendo rápido tu dedo índice · ¡No cortes el núcleo!', W / 2, H * .17 + u * .2, u * .03, '#c9d6e3', 500);
-    const legend = [...GOOD, 'nucleo'], gap = Math.min(W / 8, u * .2), y = H * .83;
+    const legend = [...GOOD, 'nucleo'], gap = Math.min(W / 10, u * .16), y = H * .83;
     legend.forEach((k, i) => {
       const x = W / 2 + (i - 3) * gap;
       ctx.save(); ctx.translate(x, y); TYPES[k].draw(u * .03, t); ctx.restore();
