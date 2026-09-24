@@ -16,3 +16,12 @@ python -m http.server 8093
 ```
 
 Luego abre http://localhost:8093 y permite el acceso a la cámara.
+
+## Organelo Invaders (`invaders.html`)
+
+Space Invaders con organelos: eres un linfocito que dispara anticuerpos.
+
+- ← → para moverte, ESPACIO para disparar (mantener = ráfaga)
+- Las membranas te protegen de los radicales libres
+- El núcleo cruza arriba como bonus
+- A: disparo automático · H: activar control con la mano (cámara)

@@ -11,16 +11,20 @@
   video{display:none}
   #msg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);font-size:15px;background:rgba(0,0,0,.55);
        padding:7px 14px;border-radius:999px;pointer-events:none;white-space:nowrap;color:#dfe9f3}
+  #other{position:fixed;top:16px;right:16px;color:#7ff6ff;background:rgba(0,0,0,.45);padding:8px 14px;border-radius:999px;
+         text-decoration:none;font-size:15px;border:1px solid rgba(127,246,255,.35)}
+  #other:hover{background:rgba(127,246,255,.15)}
 </style>
 </head>
 <body>
 <video id="cam" playsinline muted></video>
 <canvas id="c"></canvas>
+<a id="other" href="invaders.html">👾 Organelo Invaders</a>
 <div id="msg">Cargando detector de manos…</div>
 
 <script type="module">
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-const video = document.getElementById('cam'), msgEl = document.getElementById('msg');
+const video = document.getElementById('cam'), msgEl = document.getElementById('msg'), otherEl = document.getElementById('other');
 const TAU = Math.PI * 2;
 let W, H;
 function resize() {
@@ -687,6 +691,7 @@ function render(now) {
     for (const g of guns.values()) drawCrosshair(g);
   }
 
+  otherEl.style.display = state === 'menu' ? 'block' : 'none';
   if (camError) setMsg(camError);
   else if (!camReady) setMsg('Cargando cámara y detector de manos…');
   else if (!handsSeen) setMsg('Muestra tu mano a la cámara');
