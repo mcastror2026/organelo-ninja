@@ -210,14 +210,84 @@ function feed(id, x, y, now, smooth, thr) {
   if (!p0) return;
   const dt = Math.max(8, p1.t - p0.t);
   if (Math.hypot(p1.x - p0.x, p1.y - p0.y) / dt * 1000 < S() * thr) return;
-  const ang = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+  cutWith([[p0.x, p0.y, p1.x, p1.y]], Math.atan2(p1.y - p0.y, p1.x - p0.x), b, now);
+}
+// Corta todo lo que toquen los segmentos dados (trazo del mouse o barrido de la espada)
+function cutWith(segs, ang, owner, now) {
+  const hits = (cx, cy, r) => segs.some(s => segHit(s[0], s[1], s[2], s[3], cx, cy, r));
   const btn = getButton(now);
-  if (btn && segHit(p0.x, p0.y, p1.x, p1.y, btn.x, btn.y, btn.r)) {
+  if (btn && hits(btn.x, btn.y, btn.r)) {
     addHalves('mitocondria', btn.x, btn.y, 0, 0, btn.r, 0, ang);
     burst(btn.x, btn.y, '#ff8a3d', 30); sfx('slice');
     startGame(); return;
   }
-  for (const o of objs) if (!o.dead && segHit(p0.x, p0.y, p1.x, p1.y, o.x, o.y, o.r)) slice(o, ang, b, now);
+  for (const o of objs) if (!o.dead && hits(o.x, o.y, o.r)) slice(o, ang, owner, now);
+}
+
+/* ================= Espadas (mano en puño) ================= */
+const swords = new Map();
+const SWORD_LEN = () => S() * .32, BLADE_FROM = .16; // la hoja parte después de la guarda
+function swordPts(p, u) { const L = SWORD_LEN(); return [p.x + p.dx * L * u, p.y + p.dy * L * u]; }
+function updateSword(id, gx, gy, dx, dy, now) {
+  let s = swords.get(id);
+  const n = Math.hypot(dx, dy) || 1; dx /= n; dy /= n;
+  if (!s) { s = { x: gx, y: gy, dx, dy, hist: [], last: now }; swords.set(id, s); }
+  else {
+    s.x += (gx - s.x) * .6; s.y += (gy - s.y) * .6;
+    s.dx += (dx - s.dx) * .5; s.dy += (dy - s.dy) * .5;
+    const m = Math.hypot(s.dx, s.dy) || 1; s.dx /= m; s.dy /= m;
+  }
+  s.last = now;
+  const cur = { x: s.x, y: s.y, dx: s.dx, dy: s.dy, t: now }, prev = s.hist[s.hist.length - 1];
+  s.hist.push(cur);
+  if (!prev) return;
+  const dt = Math.max(8, now - prev.t);
+  const [ptx, pty] = swordPts(prev, 1), [ctx_, cty] = swordPts(cur, 1);
+  const [pmx, pmy] = swordPts(prev, .55), [cmx, cmy] = swordPts(cur, .55);
+  const speed = Math.max(Math.hypot(ctx_ - ptx, cty - pty), Math.hypot(cmx - pmx, cmy - pmy)) / dt * 1000;
+  if (speed < S() * 1.3) return;
+  // barrido: une la posición anterior y la actual de varios puntos de la hoja, más la hoja actual
+  const segs = [];
+  for (let k = 0; k <= 6; k++) {
+    const u = BLADE_FROM + (1 - BLADE_FROM) * k / 6;
+    segs.push([...swordPts(prev, u), ...swordPts(cur, u)]);
+  }
+  segs.push([...swordPts(cur, BLADE_FROM), ...swordPts(cur, 1)]);
+  cutWith(segs, Math.atan2(cty - pty, ctx_ - ptx), s, now);
+}
+function drawSword(s) {
+  const L = SWORD_LEN(), H2 = s.hist;
+  // estela del barrido
+  ctx.save(); ctx.shadowColor = '#7ff6ff'; ctx.shadowBlur = 16;
+  for (let i = 1; i < H2.length; i++) {
+    const a = H2[i - 1], b = H2[i], k = i / H2.length;
+    ctx.fillStyle = `rgba(160,245,255,${.28 * k})`;
+    ctx.beginPath();
+    ctx.moveTo(...swordPts(a, BLADE_FROM)); ctx.lineTo(...swordPts(a, 1));
+    ctx.lineTo(...swordPts(b, 1)); ctx.lineTo(...swordPts(b, BLADE_FROM)); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(Math.atan2(s.dy, s.dx));
+  const w = L * .045;
+  // hoja
+  const g = ctx.createLinearGradient(0, -w, 0, w);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(.5, '#b9d4e6'); g.addColorStop(1, '#6f8ca3');
+  ctx.save(); ctx.shadowColor = '#7ff6ff'; ctx.shadowBlur = 14;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(L * BLADE_FROM, -w); ctx.lineTo(L * .9, -w * .8); ctx.lineTo(L, 0);
+  ctx.lineTo(L * .9, w * .8); ctx.lineTo(L * BLADE_FROM, w); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(L * (BLADE_FROM + .02), 0); ctx.lineTo(L * .92, 0); ctx.stroke();
+  // guarda, mango y pomo
+  ctx.fillStyle = '#e0b43a'; ctx.strokeStyle = '#7a5a10'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(L * .13, -w * 3.2, L * .035, w * 6.4, 3); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#6b3d1f';
+  ctx.beginPath(); ctx.roundRect(-L * .12, -w * .9, L * .25, w * 1.8, 4); ctx.fill();
+  ctx.strokeStyle = '#3d2210'; ctx.lineWidth = 2;
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(i * L * .045 - w * .5, -w * .9); ctx.lineTo(i * L * .045 + w * .5, w * .9); ctx.stroke(); }
+  ctx.fillStyle = '#e0b43a'; circ(-L * .14, 0, w * 1.4); ctx.fill(); ctx.strokeStyle = '#7a5a10'; ctx.stroke();
+  ctx.restore();
 }
 
 cv.addEventListener('pointermove', e => {
@@ -267,10 +337,14 @@ function detect(now) {
   lastHands = res.landmarks || [];
   handsSeen = lastHands.length;
   lastHands.forEach((lm, i) => {
-    const tip = lm[8]; // punta del dedo índice
     const id = 'h' + (hd[i] && hd[i][0] ? hd[i][0].categoryName : i);
-    const [x, y] = zoneMap(tip.x, tip.y);
-    feed(id, x * W, y * H, now, .6, .9);
+    // el mango pasa por el puño: centro entre nudillos y muñeca
+    const kx = (lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 4, ky = (lm[5].y + lm[9].y + lm[13].y + lm[17].y) / 4;
+    const [x, y] = zoneMap(kx * .75 + lm[0].x * .25, ky * .75 + lm[0].y * .25);
+    // la hoja sale por el lado del índice: dirección meñique → índice (espejada, escalada como la zona)
+    const dx = -(lm[5].x - lm[17].x) * W / (ZONE.x1 - ZONE.x0);
+    const dy = (lm[5].y - lm[17].y) * H / (ZONE.y1 - ZONE.y0);
+    updateSword(id, x * W, y * H, dx, dy, now);
   });
 }
 // Zona activa: solo el centro del cuadro de la cámara se estira a toda la pantalla,
@@ -338,6 +412,10 @@ function update(dt, now) {
   for (const [id, b] of blades) {
     while (b.pts.length && now - b.pts[0].t > 130) b.pts.shift();
     if (now - b.last > 400) blades.delete(id);
+  }
+  for (const [id, s] of swords) {
+    while (s.hist.length > 1 && now - s.hist[0].t > 140) s.hist.shift();
+    if (now - s.last > 400) swords.delete(id);
   }
   gt += dt; spawnT -= dt;
   if (spawnT <= 0) {
@@ -430,6 +508,8 @@ function render(now) {
     ctx.strokeStyle = 'rgba(127,246,255,.9)'; ctx.lineWidth = 3; circ(b.sx, b.sy, 10); ctx.stroke();
   }
 
+  for (const s of swords.values()) drawSword(s);
+
   for (const f of floats) {
     ctx.globalAlpha = Math.min(1, f.life * 2);
     text(f.text, f.x, f.y, u * (f.big ? .06 : .035), f.col);
@@ -463,7 +543,7 @@ function render(now) {
   if (state === 'menu') {
     text('ORGANELO', W / 2, H * .17, u * .11, '#fff');
     text('NINJA', W / 2, H * .17 + u * .11, u * .11, '#7ff6ff');
-    text('Corta organelos moviendo rápido tu dedo índice · ¡No cortes el núcleo!', W / 2, H * .17 + u * .2, u * .03, '#c9d6e3', 500);
+    text('Cierra el puño como si tomaras una espada y corta los organelos · ¡No cortes el núcleo!', W / 2, H * .17 + u * .2, u * .03, '#c9d6e3', 500);
     const legend = [...GOOD, 'nucleo'], gap = Math.min(W / 10, u * .16), y = H * .83;
     legend.forEach((k, i) => {
       const x = W / 2 + (i - 3) * gap;
@@ -485,7 +565,7 @@ function render(now) {
 
   if (camError) setMsg(camError);
   else if (!camReady) setMsg('Cargando cámara y detector de manos…');
-  else setMsg(handsSeen ? '✋ Mano detectada: corta con la punta del índice' : 'Muestra tu mano a la cámara');
+  else setMsg(handsSeen ? '⚔️ Espada en mano: puño cerrado, inclina la muñeca y corta rápido' : 'Muestra tu mano a la cámara');
 }
 
 let prev = performance.now();
