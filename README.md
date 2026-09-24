@@ -1,27 +1,21 @@
-# Organelo Ninja
+# Organelo Invaders
 
-Estilo Fruit Ninja, pero con organelos celulares y controlado con la mano frente a la cámara (detección con MediaPipe Hand Landmarker, todo en el navegador).
+Space Invaders con organelos celulares: eres un linfocito que defiende la célula disparando anticuerpos.
 
-- Corta organelos moviendo rápido el dedo índice.
-- No cortes el núcleo.
-- Cada corte muestra la función del organelo.
-- Sin cámara también se juega con el mouse o en pantalla táctil.
+- Ribosomas 30 pts · Golgi 20 · mitocondrias y cloroplastos 15 · lisosomas y vacuolas 10
+- Los organelos lanzan radicales libres; las membranas te sirven de escudo
+- El núcleo cruza arriba como bonus (50–300 pts)
+- Cada organelo destruido muestra un dato de su función
+
+## Controles
+
+- **Computador:** ← → para moverte, ESPACIO para disparar (mantener = ráfaga), A = disparo automático
+- **Teléfono / tablet:** arrastra el dedo a los lados para moverte y mantenlo apoyado para disparar
 
 ## Jugar localmente
-
-La cámara necesita `localhost` o HTTPS:
 
 ```bash
 python -m http.server 8093
 ```
 
-Luego abre http://localhost:8093 y permite el acceso a la cámara.
-
-## Organelo Invaders (`invaders.html`)
-
-Space Invaders con organelos: eres un linfocito que dispara anticuerpos.
-
-- ← → para moverte, ESPACIO para disparar (mantener = ráfaga)
-- Las membranas te protegen de los radicales libres
-- El núcleo cruza arriba como bonus
-- A: disparo automático · H: activar control con la mano (cámara)
+Luego abre http://localhost:8093
