@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Organelo Ninja</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#0b0f1a;overflow:hidden;font-family:'Fredoka',system-ui,sans-serif;color:#fff}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+  video{display:none}
+  #msg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);font-size:15px;background:rgba(0,0,0,.55);
+       padding:7px 14px;border-radius:999px;pointer-events:none;white-space:nowrap;color:#dfe9f3}
+</style>
+</head>
+<body>
+<video id="cam" playsinline muted></video>
+<canvas id="c"></canvas>
+<div id="msg">Cargando detector de manos…</div>
+
+<script type="module">
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const video = document.getElementById('cam'), msgEl = document.getElementById('msg');
+const TAU = Math.PI * 2;
+let W, H;
+function resize() {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+const S = () => Math.min(W, H);
+const grav = () => H * 1.1;
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+/* ================= Organelos ================= */
+function ell(x, y, a, b, rot = 0) { ctx.beginPath(); ctx.ellipse(x, y, a, b, rot, 0, TAU); }
+function circ(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); }
+
+function drawMito(r) {
+  ctx.lineWidth = r * .08; ctx.fillStyle = '#ff8a3d'; ctx.strokeStyle = '#9c3f0c';
+  ell(0, 0, r, r * .58); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffd0a1'; ell(0, 0, r * .8, r * .4); ctx.fill();
+  ctx.strokeStyle = '#e0661e'; ctx.lineWidth = r * .1; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-r * .72, 0);
+  for (let i = 0; i < 6; i++) ctx.lineTo(-r * .55 + i * r * .22, (i % 2 ? 1 : -1) * r * .26);
+  ctx.lineTo(r * .72, 0); ctx.stroke();
+}
+function drawChloro(r) {
+  ctx.lineWidth = r * .08; ctx.fillStyle = '#46c261'; ctx.strokeStyle = '#17692c';
+  ell(0, 0, r, r * .62); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#8fe39f'; ctx.lineWidth = r * .05;
+  ctx.beginPath(); ctx.moveTo(-r * .7, 0); ctx.lineTo(r * .7, 0); ctx.stroke();
+  ctx.fillStyle = '#1f8a3b';
+  for (const gx of [-.45, 0, .45]) for (let k = -1; k <= 1; k++)
+    ctx.fillRect(gx * r - r * .14, k * r * .14 - r * .05, r * .28, r * .1);
+}
+function drawLyso(r) {
+  ctx.lineWidth = r * .1; ctx.fillStyle = '#a36bff'; ctx.strokeStyle = '#5a2bb0';
+  circ(0, 0, r); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#e9dcff';
+  for (let i = 0; i < 7; i++) {
+    const a = i * 2.4, d = r * (.2 + .45 * ((i * 37) % 10) / 10);
+    circ(Math.cos(a) * d, Math.sin(a) * d, r * .11); ctx.fill();
+  }
+}
+function drawGolgi(r) {
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 4; i++) {
+    const y = -r * .5 + i * r * .33, w = r * (.95 - i * .1);
+    for (const [c, lw] of [['#a3265e', r * .24], ['#ff79b0', r * .15]]) {
+      ctx.strokeStyle = c; ctx.lineWidth = lw;
+      ctx.beginPath(); ctx.moveTo(-w, y + r * .18); ctx.quadraticCurveTo(0, y - r * .2, w, y + r * .18); ctx.stroke();
+    }
+  }
+  ctx.fillStyle = '#ff79b0'; ctx.strokeStyle = '#a3265e'; ctx.lineWidth = r * .05;
+  for (const [x, y] of [[r * .95, -r * .55], [-r * .9, r * .75], [r * .8, r * .85]]) { circ(x, y, r * .1); ctx.fill(); ctx.stroke(); }
+}
+function drawVacuole(r) {
+  ctx.fillStyle = 'rgba(110,200,255,.55)'; ctx.strokeStyle = '#8fdcff'; ctx.lineWidth = r * .07;
+  circ(0, 0, r); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.55)'; ell(-r * .35, -r * .35, r * .25, r * .14, -.7); ctx.fill();
+}
+function drawRibo(r) {
+  ctx.lineWidth = r * .1; ctx.strokeStyle = '#8a5a00';
+  ctx.fillStyle = '#ffd23f'; ell(0, r * .2, r * .85, r * .65); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffb020'; ell(0, -r * .5, r * .6, r * .4); ctx.fill(); ctx.stroke();
+}
+function drawNucleus(r, t) {
+  const p = .5 + .5 * Math.sin(t * 7);
+  ctx.save(); ctx.shadowColor = '#ff2e4d'; ctx.shadowBlur = 20 + 20 * p;
+  ctx.fillStyle = '#4a2170'; circ(0, 0, r); ctx.fill(); ctx.restore();
+  ctx.strokeStyle = '#7a4bb0'; ctx.lineWidth = r * .06; ctx.lineCap = 'round';
+  for (let i = 0; i < 5; i++) {
+    const a = i * 1.3;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * .7, Math.sin(a) * r * .7);
+    ctx.quadraticCurveTo(Math.cos(a + .8) * r * .2, Math.sin(a + .8) * r * .2, Math.cos(a + 1.5) * r * .6, Math.sin(a + 1.5) * r * .6);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#24092f'; circ(r * .18, r * .12, r * .33); ctx.fill();
+  ctx.lineWidth = r * .1; ctx.strokeStyle = `rgba(255,77,109,${.6 + .4 * p})`; circ(0, 0, r); ctx.stroke();
+  ctx.fillStyle = '#ffb3c1';
+  for (let i = 0; i < 10; i++) { circ(Math.cos(i * TAU / 10) * r, Math.sin(i * TAU / 10) * r, r * .06); ctx.fill(); }
+}
+
+const TYPES = {
+  mitocondria: { name: 'Mitocondria', pts: 10, r: .075, col: '#ff8a3d', draw: drawMito, fact: 'produce ATP mediante la respiración celular' },
+  cloroplasto: { name: 'Cloroplasto', pts: 10, r: .075, col: '#46c261', draw: drawChloro, fact: 'realiza la fotosíntesis en células vegetales' },
+  lisosoma:    { name: 'Lisosoma', pts: 10, r: .055, col: '#a36bff', draw: drawLyso, fact: 'digiere material con enzimas hidrolíticas' },
+  golgi:       { name: 'Aparato de Golgi', pts: 15, r: .07, col: '#ff79b0', draw: drawGolgi, fact: 'modifica, empaqueta y distribuye proteínas' },
+  vacuola:     { name: 'Vacuola', pts: 5, r: .085, col: '#8fdcff', draw: drawVacuole, fact: 'almacena agua y mantiene la turgencia' },
+  ribosoma:    { name: 'Ribosoma', pts: 25, r: .04, col: '#ffd23f', draw: drawRibo, fact: 'sintetiza proteínas a partir del ARNm' },
+  nucleo:      { name: 'Núcleo', pts: 0, r: .08, col: '#ff4d6d', draw: drawNucleus, bad: true, fact: '¡guarda el ADN de la célula! No lo cortes' },
+};
+const GOOD = ['mitocondria', 'cloroplasto', 'lisosoma', 'golgi', 'vacuola', 'ribosoma'];
+
+/* ================= Estado ================= */
+const MAXL = 5;
+let state = 'menu', score = 0, lives = MAXL, gt = 0, spawnT = 1, queue = [];
+let objs = [], halves = [], parts = [], floats = [], misses = [];
+let flash = 0, shake = 0, fact = null, overAt = 0, newBest = false;
+let best = 0;
+try { best = +localStorage.getItem('organeloNinjaBest') || 0; } catch (e) {}
+
+function spawn(type) {
+  const T = TYPES[type], r = T.r * S(), g = grav();
+  const x = W * (.15 + Math.random() * .7);
+  const apex = H * (.12 + Math.random() * .3);
+  const vy = -Math.sqrt(2 * g * (H + r - apex));
+  const flight = 2 * -vy / g;
+  const vx = (W * (.2 + Math.random() * .6) - x) / flight;
+  objs.push({ type, x, y: H + r, vx, vy, r, rot: Math.random() * TAU, vr: (Math.random() - .5) * 4 });
+}
+
+function burst(x, y, col, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * TAU, sp = S() * (.2 + Math.random() * .6);
+    parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - S() * .2, r: 2 + Math.random() * 5, col, life: .6 + Math.random() * .5 });
+  }
+}
+
+function addHalves(type, x, y, vx, vy, r, rot, ang) {
+  const nx = -Math.sin(ang), ny = Math.cos(ang), sp = S() * .35;
+  for (const s of [1, -1])
+    halves.push({ type, x, y, vx: vx + nx * sp * s, vy: vy * .4 + ny * sp * s, r, rot, vr: s * 3, ang, side: s, life: 1.4 });
+}
+
+function slice(o, ang, b, t) {
+  o.dead = true;
+  const T = TYPES[o.type];
+  addHalves(o.type, o.x, o.y, o.vx, o.vy, o.r, o.rot, ang);
+  burst(o.x, o.y, T.col, 18);
+  if (state !== 'playing') { sfx('slice'); return; }
+  if (T.bad) {
+    flash = 1; shake = 16;
+    floats.push({ x: o.x, y: o.y, text: '¡Núcleo dañado!', col: '#ff4d6d', life: 1.3 });
+    fact = { text: `Núcleo: ${T.fact}`, life: 3.5 };
+    sfx('bad'); loseLife();
+    return;
+  }
+  b.combo = t - (b.lastCut || 0) < 300 ? (b.combo || 0) + 1 : 1;
+  b.lastCut = t;
+  let pts = T.pts;
+  if (b.combo >= 3) {
+    pts += b.combo * 5;
+    floats.push({ x: o.x, y: o.y - o.r * 1.6, text: `¡COMBO x${b.combo}!`, col: '#7ff6ff', life: 1.1, big: true });
+  }
+  score += pts;
+  floats.push({ x: o.x, y: o.y, text: `+${pts} ${T.name}`, col: T.col, life: 1.1 });
+  fact = { text: `${T.name}: ${T.fact}`, life: 3.5 };
+  sfx('slice');
+}
+
+function loseLife(missX) {
+  lives--;
+  if (missX !== undefined) { misses.push({ x: missX, life: 1.2 }); sfx('miss'); }
+  if (lives <= 0) gameOver();
+}
+
+function startGame() {
+  state = 'playing'; score = 0; lives = MAXL; gt = 0; spawnT = .8; queue = []; objs = []; fact = null;
+}
+function gameOver() {
+  state = 'over'; overAt = performance.now();
+  newBest = score > best;
+  if (newBest) { best = score; try { localStorage.setItem('organeloNinjaBest', best); } catch (e) {} }
+}
+
+function getButton(now) {
+  if (state === 'playing' || (state === 'over' && now - overAt < 1200)) return null;
+  return { x: W / 2, y: H * .6 + Math.sin(now / 400) * 8, r: S() * .12 };
+}
+
+/* ================= Cuchillas (dedo / mouse) ================= */
+const blades = new Map();
+function segHit(ax, ay, bx, by, cx, cy, r) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cy - ay) * dy) / l2));
+  const px = ax + t * dx - cx, py = ay + t * dy - cy;
+  return px * px + py * py <= r * r;
+}
+function feed(id, x, y, now, smooth, thr) {
+  let b = blades.get(id);
+  if (!b) { b = { pts: [], sx: x, sy: y, last: now }; blades.set(id, b); }
+  else { b.sx += (x - b.sx) * smooth; b.sy += (y - b.sy) * smooth; }
+  b.last = now;
+  const p1 = { x: b.sx, y: b.sy, t: now }, p0 = b.pts[b.pts.length - 1];
+  b.pts.push(p1);
+  if (!p0) return;
+  const dt = Math.max(8, p1.t - p0.t);
+  if (Math.hypot(p1.x - p0.x, p1.y - p0.y) / dt * 1000 < S() * thr) return;
+  const ang = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+  const btn = getButton(now);
+  if (btn && segHit(p0.x, p0.y, p1.x, p1.y, btn.x, btn.y, btn.r)) {
+    addHalves('mitocondria', btn.x, btn.y, 0, 0, btn.r, 0, ang);
+    burst(btn.x, btn.y, '#ff8a3d', 30); sfx('slice');
+    startGame(); return;
+  }
+  for (const o of objs) if (!o.dead && segHit(p0.x, p0.y, p1.x, p1.y, o.x, o.y, o.r)) slice(o, ang, b, now);
+}
+
+cv.addEventListener('pointermove', e => {
+  if (e.pointerType === 'mouse' || e.buttons) feed('m', e.clientX, e.clientY, performance.now(), 1, 1.2);
+});
+cv.addEventListener('pointerdown', e => {
+  ac();
+  const btn = getButton(performance.now());
+  if (btn && Math.hypot(e.clientX - btn.x, e.clientY - btn.y) < btn.r) {
+    addHalves('mitocondria', btn.x, btn.y, 0, 0, btn.r, 0, 0.3);
+    burst(btn.x, btn.y, '#ff8a3d', 30); sfx('slice'); startGame();
+  }
+});
+addEventListener('keydown', ac);
+
+/* ================= Cámara + MediaPipe ================= */
+let landmarker = null, camReady = false, handsSeen = 0, lastVT = -1, camError = '';
+function camMap() {
+  const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(W / vw, H / vh);
+  return { s, vw, vh, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2 };
+}
+async function initHands() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: false });
+    video.srcObject = stream; await video.play();
+  } catch (e) {
+    console.warn(e); camError = 'Sin acceso a la cámara: juega con el mouse (o el dedo en pantalla táctil)'; return;
+  }
+  try {
+    const V = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+    const { HandLandmarker, FilesetResolver } = await import(V);
+    const fs = await FilesetResolver.forVisionTasks(V + '/wasm');
+    const opts = delegate => ({
+      baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate },
+      runningMode: 'VIDEO', numHands: 2,
+    });
+    try { landmarker = await HandLandmarker.createFromOptions(fs, opts('GPU')); }
+    catch (e) { landmarker = await HandLandmarker.createFromOptions(fs, opts('CPU')); }
+    camReady = true;
+  } catch (e) {
+    console.warn(e); camError = 'No se pudo cargar el detector de manos: juega con el mouse';
+  }
+}
+function detect(now) {
+  if (!camReady || video.readyState < 2 || video.currentTime === lastVT) return;
+  lastVT = video.currentTime;
+  const res = landmarker.detectForVideo(video, now);
+  const m = camMap(), hd = res.handedness || res.handednesses || [];
+  handsSeen = res.landmarks ? res.landmarks.length : 0;
+  (res.landmarks || []).forEach((lm, i) => {
+    const tip = lm[8]; // punta del dedo índice
+    const id = 'h' + (hd[i] && hd[i][0] ? hd[i][0].categoryName : i);
+    feed(id, W - (m.ox + tip.x * m.vw * m.s), m.oy + tip.y * m.vh * m.s, now, .6, .9);
+  });
+}
+initHands();
+
+/* ================= Sonido ================= */
+let AC = null;
+function ac() {
+  try { if (!AC) AC = new AudioContext(); if (AC.state === 'suspended') AC.resume(); } catch (e) {}
+}
+function sfx(k) {
+  const a = AC; if (!a || a.state !== 'running') return;
+  const t = a.currentTime;
+  if (k === 'slice') {
+    const len = .18, buf = a.createBuffer(1, a.sampleRate * len, a.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const s = a.createBufferSource(); s.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 2;
+    f.frequency.setValueAtTime(4000, t); f.frequency.exponentialRampToValueAtTime(700, t + len);
+    const g = a.createGain(); g.gain.value = .5;
+    s.connect(f).connect(g).connect(a.destination); s.start(t);
+  } else {
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = k === 'bad' ? 'sawtooth' : 'triangle';
+    o.frequency.setValueAtTime(k === 'bad' ? 220 : 330, t); o.frequency.exponentialRampToValueAtTime(55, t + .45);
+    g.gain.setValueAtTime(.22, t); g.gain.exponentialRampToValueAtTime(.001, t + .5);
+    o.connect(g).connect(a.destination); o.start(t); o.stop(t + .5);
+  }
+}
+
+/* ================= Actualización ================= */
+function update(dt, now) {
+  for (const [id, b] of blades) {
+    while (b.pts.length && now - b.pts[0].t > 130) b.pts.shift();
+    if (now - b.last > 400) blades.delete(id);
+  }
+  gt += dt; spawnT -= dt;
+  if (spawnT <= 0) {
+    if (state === 'playing') {
+      const n = 1 + Math.floor(Math.random() * Math.min(4, 1 + gt / 20));
+      const pNuc = Math.min(.25, .08 + gt * .004);
+      for (let i = 0; i < n; i++) queue.push({ at: gt + i * .15, type: Math.random() < pNuc ? 'nucleo' : pick(GOOD) });
+      spawnT = Math.max(.6, 1.7 - gt * .02) + n * .15;
+    } else {
+      queue.push({ at: gt, type: pick(GOOD) }); spawnT = 1.6;
+    }
+  }
+  queue = queue.filter(q => (q.at <= gt ? (spawn(q.type), false) : true));
+
+  const g = grav();
+  for (const o of objs) {
+    o.vy += g * dt; o.x += o.vx * dt; o.y += o.vy * dt; o.rot += o.vr * dt;
+    if (o.vy > 0 && o.y > H + o.r * 1.5) {
+      o.dead = true;
+      if (state === 'playing' && !TYPES[o.type].bad) loseLife(o.x);
+    }
+  }
+  objs = objs.filter(o => !o.dead);
+  for (const h of halves) { h.vy += g * dt; h.x += h.vx * dt; h.y += h.vy * dt; h.rot += h.vr * dt; h.life -= dt; }
+  halves = halves.filter(h => h.life > 0 && h.y < H + h.r * 3);
+  for (const p of parts) { p.vy += g * .6 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+  parts = parts.filter(p => p.life > 0);
+  for (const f of floats) { f.y -= 40 * dt; f.life -= dt; }
+  floats = floats.filter(f => f.life > 0);
+  for (const m of misses) m.life -= dt;
+  misses = misses.filter(m => m.life > 0);
+  flash = Math.max(0, flash - dt * 2); shake = Math.max(0, shake - dt * 30);
+  if (fact && (fact.life -= dt) <= 0) fact = null;
+}
+
+/* ================= Render ================= */
+let lastMsg = null;
+function setMsg(s) { if (s !== lastMsg) { lastMsg = s; msgEl.textContent = s; msgEl.style.display = s ? 'block' : 'none'; } }
+
+function drawBg() {
+  ctx.fillStyle = '#0b0f1a'; ctx.fillRect(0, 0, W, H);
+  if (video.readyState >= 2 && video.videoWidth) {
+    const m = camMap();
+    ctx.save(); ctx.globalAlpha = .3; ctx.translate(W, 0); ctx.scale(-1, 1);
+    ctx.drawImage(video, m.ox, m.oy, m.vw * m.s, m.vh * m.s); ctx.restore();
+  }
+  const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * .7);
+  g.addColorStop(0, 'rgba(30,60,90,.35)'); g.addColorStop(1, 'rgba(5,8,18,.88)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+function text(str, x, y, size, col, weight = 700, align = 'center') {
+  ctx.font = `${weight} ${size}px Fredoka, system-ui, sans-serif`;
+  ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.lineWidth = size * .12; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.strokeText(str, x, y);
+  ctx.fillStyle = col; ctx.fillText(str, x, y);
+}
+
+function render(now) {
+  const t = now / 1000, u = S();
+  ctx.save();
+  if (shake) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
+  drawBg();
+
+  for (const m of misses) {
+    ctx.globalAlpha = Math.min(1, m.life); ctx.strokeStyle = '#ff4d6d'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    const s = u * .03, y = H - u * .06;
+    ctx.beginPath(); ctx.moveTo(m.x - s, y - s); ctx.lineTo(m.x + s, y + s); ctx.moveTo(m.x + s, y - s); ctx.lineTo(m.x - s, y + s); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  for (const o of objs) { ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.rot); TYPES[o.type].draw(o.r, t); ctx.restore(); }
+
+  for (const h of halves) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, h.life / .4);
+    ctx.translate(h.x, h.y); ctx.rotate(h.ang);
+    ctx.beginPath(); ctx.rect(-h.r * 2, 0, h.r * 4, h.r * 2 * h.side); ctx.clip();
+    ctx.rotate(h.rot - h.ang); TYPES[h.type].draw(h.r, t); ctx.restore();
+  }
+
+  for (const p of parts) { ctx.globalAlpha = Math.min(1, p.life * 2); ctx.fillStyle = p.col; circ(p.x, p.y, p.r); ctx.fill(); }
+  ctx.globalAlpha = 1;
+
+  for (const b of blades.values()) {
+    const P = b.pts;
+    if (P.length > 1) {
+      ctx.save(); ctx.lineCap = 'round'; ctx.shadowColor = '#7ff6ff'; ctx.shadowBlur = 18;
+      for (let i = 1; i < P.length; i++) {
+        const k = i / (P.length - 1);
+        ctx.strokeStyle = `rgba(200,250,255,${k})`; ctx.lineWidth = 2 + k * u * .018;
+        ctx.beginPath(); ctx.moveTo(P[i - 1].x, P[i - 1].y); ctx.lineTo(P[i].x, P[i].y); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.strokeStyle = 'rgba(127,246,255,.9)'; ctx.lineWidth = 3; circ(b.sx, b.sy, 10); ctx.stroke();
+  }
+
+  for (const f of floats) {
+    ctx.globalAlpha = Math.min(1, f.life * 2);
+    text(f.text, f.x, f.y, u * (f.big ? .06 : .035), f.col);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  if (flash) { ctx.fillStyle = `rgba(255,40,70,${flash * .35})`; ctx.fillRect(0, 0, W, H); }
+
+  // HUD
+  if (state !== 'menu') {
+    text(String(score), 24, 24 + u * .035, u * .07, '#fff', 700, 'left');
+    text('Récord ' + best, 26, 24 + u * .09, u * .028, '#9fb3c8', 500, 'left');
+    for (let i = 0; i < MAXL; i++) {
+      const x = W - 28 - i * u * .055, y = 24 + u * .03, r = u * .02;
+      circ(x, y, r);
+      if (MAXL - 1 - i < lives) { ctx.fillStyle = '#46c261'; ctx.fill(); ctx.fillStyle = '#17692c'; circ(x + r * .2, y, r * .4); ctx.fill(); }
+      else { ctx.strokeStyle = '#51606f'; ctx.lineWidth = 3; ctx.stroke(); }
+    }
+  }
+  if (fact) {
+    ctx.globalAlpha = Math.min(1, fact.life);
+    ctx.font = `500 ${u * .03}px Fredoka, system-ui, sans-serif`;
+    const w = ctx.measureText(fact.text).width + u * .06, y = u * .17;
+    ctx.fillStyle = 'rgba(10,20,35,.75)'; ctx.beginPath(); ctx.roundRect(W / 2 - w / 2, y - u * .03, w, u * .06, u * .03); ctx.fill();
+    text(fact.text, W / 2, y, u * .03, '#e6f2ff', 500);
+    ctx.globalAlpha = 1;
+  }
+
+  if (state === 'menu') {
+    text('ORGANELO', W / 2, H * .17, u * .11, '#fff');
+    text('NINJA', W / 2, H * .17 + u * .11, u * .11, '#7ff6ff');
+    text('Corta organelos moviendo rápido tu dedo índice · ¡No cortes el núcleo!', W / 2, H * .17 + u * .2, u * .03, '#c9d6e3', 500);
+    const legend = [...GOOD, 'nucleo'], gap = Math.min(W / 8, u * .2), y = H * .83;
+    legend.forEach((k, i) => {
+      const x = W / 2 + (i - 3) * gap;
+      ctx.save(); ctx.translate(x, y); TYPES[k].draw(u * .03, t); ctx.restore();
+      text(TYPES[k].bad ? '¡EVITAR!' : `${TYPES[k].pts} pts`, x, y + u * .055, u * .022, TYPES[k].bad ? '#ff4d6d' : '#c9d6e3', 500);
+    });
+  }
+  if (state === 'over') {
+    ctx.fillStyle = 'rgba(5,8,18,.55)'; ctx.fillRect(0, 0, W, H);
+    text('FIN DEL JUEGO', W / 2, H * .2, u * .09, '#ff4d6d');
+    text(`${score} puntos`, W / 2, H * .2 + u * .1, u * .06, '#fff');
+    text(newBest ? '¡Nuevo récord!' : `Récord: ${best}`, W / 2, H * .2 + u * .17, u * .035, newBest ? '#ffd23f' : '#9fb3c8', 500);
+  }
+  const btn = getButton(now);
+  if (btn) {
+    ctx.save(); ctx.translate(btn.x, btn.y); ctx.rotate(Math.sin(now / 700) * .15); drawMito(btn.r); ctx.restore();
+    text(state === 'menu' ? 'CORTA PARA JUGAR' : 'CORTA PARA JUGAR DE NUEVO', btn.x, btn.y + btn.r * .9, u * .035, '#fff');
+  }
+
+  if (camError) setMsg(camError);
+  else if (!camReady) setMsg('Cargando cámara y detector de manos…');
+  else setMsg(handsSeen ? '✋ Mano detectada: corta con la punta del índice' : 'Muestra tu mano a la cámara');
+}
+
+let prev = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - prev) / 1000); prev = now;
+  if (!W || !H) { resize(); requestAnimationFrame(frame); return; }
+  if (landmarker) { try { detect(now); } catch (e) { console.warn(e); } }
+  update(dt, now);
+  render(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
